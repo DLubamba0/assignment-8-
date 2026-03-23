@@ -17,19 +17,20 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Test database connection
+// Test DB connection
 async function testConnection() {
   try {
     await db.authenticate();
-    console.log('Connection to database established successfully.');
+    console.log('Connected to database');
   } catch (error) {
-    console.error('Unable to connect to the database:', error);
+    console.error('Database connection failed:', error);
   }
 }
-
 testConnection();
 
-// Authentication middleware
+// =========================
+// AUTH MIDDLEWARE
+// =========================
 function authMiddleware(req, res, next) {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Unauthorized. Please log in.' });
@@ -41,141 +42,111 @@ function authMiddleware(req, res, next) {
 // AUTH ROUTES
 // =========================
 
-// POST /api/register
+// REGISTER
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({
-        error: 'Username, email, and password are required.'
+        error: 'Username, email, and password are required'
       });
     }
 
     const existingUser = await User.findOne({ where: { email } });
 
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists.' });
+      return res.status(400).json({ error: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = await User.create({
+    const user = await User.create({
       username,
       email,
       password: hashedPassword
     });
 
     res.status(201).json({
-      message: 'User registered successfully.',
-      user: {
-        id: newUser.id,
-        username: newUser.username,
-        email: newUser.email
-      }
-    });
-  } catch (error) {
-    console.error('Error registering user:', error);
-    res.status(500).json({ error: 'Server error during registration.' });
-  }
-});
-
-// POST /api/login
-app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        error: 'Email and password are required.'
-      });
-    }
-
-    const user = await User.findOne({ where: { email } });
-
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    req.session.userId = user.id;
-    req.session.username = user.username;
-
-    res.status(200).json({
-      message: 'Login successful.',
+      message: 'User registered successfully',
       user: {
         id: user.id,
         username: user.username,
         email: user.email
       }
     });
+
   } catch (error) {
-    console.error('Error logging in:', error);
-    res.status(500).json({ error: 'Server error during login.' });
+    console.error(error);
+    res.status(500).json({ error: 'Server error during registration' });
   }
 });
 
-// POST /api/logout
-app.post('/api/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('Error logging out:', err);
-      return res.status(500).json({ error: 'Could not log out.' });
+// LOGIN
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ where: { email } });
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    res.status(200).json({ message: 'Logout successful.' });
+    const match = await bcrypt.compare(password, user.password);
+
+    if (!match) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    req.session.userId = user.id;
+
+    res.json({
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        username: user.username
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error during login' });
+  }
+});
+
+// LOGOUT
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ message: 'Logged out successfully' });
   });
 });
 
 // =========================
-// PROJECT ROUTES
+// PROJECT ROUTES (PROTECTED)
 // =========================
 
-// GET /api/projects - Get all projects for logged-in user
+// GET all projects for logged-in user
 app.get('/api/projects', authMiddleware, async (req, res) => {
   try {
     const projects = await Project.findAll({
       where: { userId: req.session.userId }
     });
+
     res.json(projects);
+
   } catch (error) {
-    console.error('Error fetching projects:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to fetch projects' });
   }
 });
 
-// GET /api/projects/:id - Get project by ID for logged-in user
-app.get('/api/projects/:id', authMiddleware, async (req, res) => {
-  try {
-    const project = await Project.findOne({
-      where: {
-        id: req.params.id,
-        userId: req.session.userId
-      }
-    });
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    res.json(project);
-  } catch (error) {
-    console.error('Error fetching project:', error);
-    res.status(500).json({ error: 'Failed to fetch project' });
-  }
-});
-
-// POST /api/projects - Create new project for logged-in user
+// CREATE project
 app.post('/api/projects', authMiddleware, async (req, res) => {
   try {
     const { name, description, status, dueDate } = req.body;
 
-    const newProject = await Project.create({
+    const project = await Project.create({
       name,
       description,
       status,
@@ -183,18 +154,17 @@ app.post('/api/projects', authMiddleware, async (req, res) => {
       userId: req.session.userId
     });
 
-    res.status(201).json(newProject);
+    res.status(201).json(project);
+
   } catch (error) {
-    console.error('Error creating project:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to create project' });
   }
 });
 
-// PUT /api/projects/:id - Update existing project for logged-in user
+// UPDATE project
 app.put('/api/projects/:id', authMiddleware, async (req, res) => {
   try {
-    const { name, description, status, dueDate } = req.body;
-
     const project = await Project.findOne({
       where: {
         id: req.params.id,
@@ -206,40 +176,43 @@ app.put('/api/projects/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    await project.update({ name, description, status, dueDate });
+    await project.update(req.body);
+
     res.json(project);
+
   } catch (error) {
-    console.error('Error updating project:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to update project' });
   }
 });
 
-// DELETE /api/projects/:id - Delete project for logged-in user
+// DELETE project
 app.delete('/api/projects/:id', authMiddleware, async (req, res) => {
   try {
-    const deletedRowsCount = await Project.destroy({
+    const deleted = await Project.destroy({
       where: {
         id: req.params.id,
         userId: req.session.userId
       }
     });
 
-    if (deletedRowsCount === 0) {
+    if (!deleted) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    res.json({ message: 'Project deleted successfully' });
+    res.json({ message: 'Project deleted' });
+
   } catch (error) {
-    console.error('Error deleting project:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to delete project' });
   }
 });
 
 // =========================
-// TASK ROUTES
+// TASK ROUTES (PROTECTED)
 // =========================
 
-// GET /api/tasks - Get all tasks for logged-in user's projects
+// GET tasks (only user's projects)
 app.get('/api/tasks', authMiddleware, async (req, res) => {
   try {
     const tasks = await Task.findAll({
@@ -250,38 +223,17 @@ app.get('/api/tasks', authMiddleware, async (req, res) => {
     });
 
     res.json(tasks);
+
   } catch (error) {
-    console.error('Error fetching tasks:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 });
 
-// GET /api/tasks/:id - Get task by ID for logged-in user
-app.get('/api/tasks/:id', authMiddleware, async (req, res) => {
-  try {
-    const task = await Task.findOne({
-      where: { id: req.params.id },
-      include: [{
-        model: Project,
-        where: { userId: req.session.userId }
-      }]
-    });
-
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    res.json(task);
-  } catch (error) {
-    console.error('Error fetching task:', error);
-    res.status(500).json({ error: 'Failed to fetch task' });
-  }
-});
-
-// POST /api/tasks - Create task only inside user's project
+// CREATE task (only inside user's project)
 app.post('/api/tasks', authMiddleware, async (req, res) => {
   try {
-    const { title, description, completed, priority, dueDate, projectId } = req.body;
+    const { projectId } = req.body;
 
     const project = await Project.findOne({
       where: {
@@ -291,83 +243,23 @@ app.post('/api/tasks', authMiddleware, async (req, res) => {
     });
 
     if (!project) {
-      return res.status(404).json({ error: 'Project not found or unauthorized' });
+      return res.status(404).json({ error: 'Unauthorized project' });
     }
 
-    const newTask = await Task.create({
-      title,
-      description,
-      completed,
-      priority,
-      dueDate,
-      projectId
-    });
+    const task = await Task.create(req.body);
 
-    res.status(201).json(newTask);
+    res.status(201).json(task);
+
   } catch (error) {
-    console.error('Error creating task:', error);
+    console.error(error);
     res.status(500).json({ error: 'Failed to create task' });
   }
 });
 
-// PUT /api/tasks/:id - Update task for logged-in user
-app.put('/api/tasks/:id', authMiddleware, async (req, res) => {
-  try {
-    const { title, description, completed, priority, dueDate, projectId } = req.body;
+// =========================
+// START SERVER
+// =========================
 
-    const task = await Task.findOne({
-      where: { id: req.params.id },
-      include: [{
-        model: Project,
-        where: { userId: req.session.userId }
-      }]
-    });
-
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    await task.update({
-      title,
-      description,
-      completed,
-      priority,
-      dueDate,
-      projectId
-    });
-
-    res.json(task);
-  } catch (error) {
-    console.error('Error updating task:', error);
-    res.status(500).json({ error: 'Failed to update task' });
-  }
-});
-
-// DELETE /api/tasks/:id - Delete task for logged-in user
-app.delete('/api/tasks/:id', authMiddleware, async (req, res) => {
-  try {
-    const task = await Task.findOne({
-      where: { id: req.params.id },
-      include: [{
-        model: Project,
-        where: { userId: req.session.userId }
-      }]
-    });
-
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    await task.destroy();
-
-    res.json({ message: 'Task deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting task:', error);
-    res.status(500).json({ error: 'Failed to delete task' });
-  }
-});
-
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
